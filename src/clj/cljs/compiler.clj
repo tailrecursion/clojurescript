@@ -721,7 +721,7 @@
     (emit-wrap env
       (when pb
         (let [farg (first args)]
-          (let [mask (str "cljs$protocol_mask$partition" part "$")
+          (let [mask (str "cljs$lang$protocol_mask$partition" part "$")
                 pmeth (str (cljs.core/protocol-prefix p)
                            (munge (name (-> f :info :name-sym)))
                            "$arity$" (count args))]
