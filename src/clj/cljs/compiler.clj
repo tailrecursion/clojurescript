@@ -715,8 +715,17 @@
                  [(update-in f [:info :name]
                              (fn [name] (symbol (str name ".cljs$lang$arity$" arity)))) nil]
                  [f nil]))))
-          [f nil])]
+          [f nil])
+        p (-> f :info :protocol)
+        [part bit :as pb] (cljs.core/fast-path-protocols p)]
     (emit-wrap env
+      (when pb
+        (let [farg (first args)]
+          (let [mask (str "cljs$protocol_mask$partition" part "$")
+                pmeth (str (cljs.core/protocol-prefix p)
+                           (munge (name (-> f :info :name-sym)))
+                           "$arity$" (count args))]
+            (emits "((" farg " && (" farg "." mask " & " bit ")) ? " farg "." pmeth "(" (comma-sep args) ") : "))))         
       (cond
        variadic-invoke
        (let [mfa (:max-fixed-arity variadic-invoke)]
@@ -728,7 +737,9 @@
        (emits f "(" (comma-sep args)  ")")
        
        :else
-       (emits f ".call(" (comma-sep (cons "null" args)) ")")))))
+       (emits f ".call(" (comma-sep (cons "null" args)) ")"))
+      (when pb
+        (emits ")")))))
 
 (defmethod emit :new
   [{:keys [ctor args env]}]

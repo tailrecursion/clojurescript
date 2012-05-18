@@ -283,7 +283,7 @@
 
 ;;; end of reducers macros
 
-(defn- protocol-prefix [psym]
+(defn protocol-prefix [psym]
   (core/str (.replace (core/str psym) \. \$) "$"))
 
 (def #^:private base-type
