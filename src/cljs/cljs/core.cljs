@@ -69,8 +69,7 @@
 (defn aclone
   "Returns a javascript array, cloned from the passed in array"
   [array-like]
-  #_(goog.array.clone array-like)
-  (js* "Array.prototype.slice.call(~{array-like})"))
+  (js* "(~{array-like}).slice()"))
 
 (defn array
   "Creates a new javascript array.
@@ -259,6 +258,9 @@
 
 (defprotocol ITransientSet
   (-disjoin! [tcoll v]))
+
+(defprotocol IComparable
+  (-compare [x y]))
 
 ;;;;;;;;;;;;;;;;;;; fundamentals ;;;;;;;;;;;;;;;
 (defn ^boolean identical?
@@ -846,16 +848,16 @@ reduces them without incurring seq initialization"
   (if x true false))
 
 (defn ^boolean string? [x]
-  (and (goog/isString x)
-       (not (or (identical? (.charAt x 0) \uFDD0)
-                (identical? (.charAt x 0) \uFDD1)))))
+  (and ^boolean (goog/isString x)
+       (coercive-not (or (identical? (.charAt x 0) \uFDD0)
+                         (identical? (.charAt x 0) \uFDD1)))))
 
 (defn ^boolean keyword? [x]
-  (and (goog/isString x)
+  (and ^boolean (goog/isString x)
        (identical? (.charAt x 0) \uFDD0)))
 
 (defn ^boolean symbol? [x]
-  (and (goog/isString x)
+  (and ^boolean (goog/isString x)
        (identical? (.charAt x 0) \uFDD1)))
 
 (defn ^boolean number? [n]
@@ -913,14 +915,32 @@ reduces them without incurring seq initialization"
 (defn compare
   "Comparator. Returns a negative number, zero, or a positive number
   when x is logically 'less than', 'equal to', or 'greater than'
-  y. Uses google.array.defaultCompare for objects of the same type
-  and special-cases nil to be less than any other object."
+  y. Uses IComparable if available and google.array.defaultCompare for objects
+ of the same type and special-cases nil to be less than any other object."
   [x y]
   (cond
-    (identical? (type x) (type y)) (garray/defaultCompare x y)
-    (nil? x) -1
-    (nil? y) 1
-    :else (throw (js/Error. "compare on non-nil objects of different types"))))
+   (identical? x y) 0
+   (nil? x) -1
+   (nil? y) 1
+   (identical? (type x) (type y)) (if (satisfies? IComparable x)
+                                    (-compare x y)
+                                    (garray/defaultCompare x y))
+   :else (throw (js/Error. "compare on non-nil objects of different types"))))
+
+(defn ^:private compare-indexed
+  "Compare indexed collection."
+  ([xs ys]
+     (let [xl (count xs)
+           yl (count ys)]
+       (cond
+        (< xl yl) -1
+        (> xl yl) 1
+        :else (compare-indexed xs ys xl 0))))
+  ([xs ys len n]
+     (let [d (compare (nth xs n) (nth ys n))]
+       (if (and (zero? d) (< (+ n 1) len))
+         (recur xs ys len (inc n))
+         d))))
 
 (defn ^:private fn->comparator
   "Given a fn that might be boolean valued or a comparator,
@@ -975,6 +995,15 @@ reduces them without incurring seq initialization"
             @nval
             (recur nval (next coll))))
         val))))
+
+(declare vec)
+
+(defn shuffle
+  "Return a random permutation of coll"
+  [coll]
+  (let [a (to-array coll)]
+    (garray/shuffle a)
+    (vec a)))
 
 (defn reduce
   "f should be a function of 2 arguments. If val is not supplied,
@@ -1535,6 +1564,15 @@ reduces them without incurring seq initialization"
        (ci-reduce string f))
     ([string f start]
        (ci-reduce string f start))))
+
+(deftype Keyword [k]
+  IFn
+  (invoke [_ coll]
+    (when (coercive-not= coll nil)
+      (let [strobj (.-strobj coll)]
+        (if (nil? strobj)
+          (-lookup coll k nil)
+          (aget strobj k))))))
 
 ;;hrm
 (extend-type js/String
@@ -2472,13 +2510,14 @@ reduces them without incurring seq initialization"
       (do
         (pv-aset ret subidx tailnode)
         ret)
-      (if-let [child (pv-aget parent subidx)]
-        (let [node-to-insert (push-tail pv (- level 5) child tailnode)]
-          (pv-aset ret subidx node-to-insert)
-          ret)
-        (let [node-to-insert (new-path nil (- level 5) tailnode)]
-          (pv-aset ret subidx node-to-insert)
-          ret)))))
+      (let [child (pv-aget parent subidx)]
+        (if (coercive-not= child nil)
+          (let [node-to-insert (push-tail pv (- level 5) child tailnode)]
+            (pv-aset ret subidx node-to-insert)
+            ret)
+          (let [node-to-insert (new-path nil (- level 5) tailnode)]
+            (pv-aset ret subidx node-to-insert)
+            ret))))))
 
 (defn- array-for [pv i]
   (if (and (<= 0 i) (< i (.-cnt pv)))
@@ -2537,7 +2576,10 @@ reduces them without incurring seq initialization"
               (vector-seq v offset)
               ())))
         ISeqable
-        (-seq [vseq] vseq)))))
+        (-seq [vseq] vseq)
+        ICollection
+        (-conj [this o]
+          (cons o this))))))
 
 (deftype PersistentVector [meta cnt shift root tail ^:mutable __hash]
   Object
@@ -2676,7 +2718,7 @@ reduces them without incurring seq initialization"
 (set! cljs.core.PersistentVector/fromArray
       (fn [xs]
         (loop [xs (seq xs) out (transient cljs.core.PersistentVector/EMPTY)]
-          (if xs
+          (if (coercive-not= xs nil)
             (recur (next xs) (conj! out (first xs)))
             (persistent! out)))))
 
@@ -2836,7 +2878,7 @@ reduces them without incurring seq initialization"
                           ^:mutable tail]
   ITransientCollection
   (-conj! [tcoll o]
-    (if (.-edit root)
+    (if ^boolean (.-edit root)
       (if (< (- cnt (tail-off tcoll)) 32)
         (do (aset tail (bit-and cnt 0x01f) o)
             (set! cnt (inc cnt))
@@ -2862,7 +2904,7 @@ reduces them without incurring seq initialization"
       (throw (js/Error. "conj! after persistent!"))))
 
   (-persistent! [tcoll]
-    (if (.-edit root)
+    (if ^boolean (.-edit root)
       (do (set! (.-edit root) nil)
           (let [len (- cnt (tail-off tcoll))
                 trimmed-tail (make-array len)]
@@ -2875,7 +2917,7 @@ reduces them without incurring seq initialization"
 
   ITransientVector
   (-assoc-n! [tcoll n val]
-    (if (.-edit root)
+    (if ^boolean (.-edit root)
       (cond
         (and (<= 0 n) (< n cnt))
         (if (<= (tail-off tcoll) n)
@@ -2903,7 +2945,7 @@ reduces them without incurring seq initialization"
       (throw (js/Error. "assoc! after persistent!"))))
 
   (-pop! [tcoll]
-    (if (.-edit root)
+    (if ^boolean (.-edit root)
       (cond
         (zero? cnt) (throw (js/Error. "Can't pop empty vector"))
         (== 1 cnt)                       (do (set! cnt 0) tcoll)
@@ -2929,13 +2971,13 @@ reduces them without incurring seq initialization"
 
   ICounted
   (-count [coll]
-    (if (.-edit root)
+    (if ^boolean (.-edit root)
       cnt
       (throw (js/Error. "count after persistent!"))))
 
   IIndexed
   (-nth [coll n]
-    (if (.-edit root)
+    (if ^boolean (.-edit root)
       (aget (array-for coll n) (bit-and n 0x01f))
       (throw (js/Error. "nth after persistent!"))))
 
@@ -3067,10 +3109,10 @@ reduces them without incurring seq initialization"
 
 
 (defn- scan-array [incr k array]
-  (let [len (.-length array)]
+  (let [len (alength array)]
     (loop [i 0]
       (when (< i len)
-        (if (= k (aget array i))
+        (if (identical? k (aget array i))
           i
           (recur (+ i incr)))))))
 
@@ -3079,14 +3121,6 @@ reduces them without incurring seq initialization"
 ; to store the value in strobj.  If a key is assoc'ed when that same
 ; key already exists in strobj, the old value is overwritten. If a
 ; non-string key is assoc'ed, return a HashMap object instead.
-
-(defn- obj-map-contains-key?
-  ([k strobj]
-     (obj-map-contains-key? k strobj true false))
-  ([k strobj true-val false-val]
-     (if (and (goog/isString k) (.hasOwnProperty strobj k))
-       true-val
-       false-val)))
 
 (defn- obj-map-compare-keys [a b]
   (let [a (hash a)
@@ -3109,6 +3143,16 @@ reduces them without incurring seq initialization"
         (persistent! (assoc! out k v))))))
 
 ;;; ObjMap
+
+(defn- obj-clone [obj ks]
+  (let [new-obj (js-obj)
+        l (alength ks)]
+    (loop [i 0]
+      (when (< i l)
+        (let [k (aget ks i)]
+          (aset new-obj k (aget obj k))
+          (recur (inc i)))))
+    new-obj))
 
 (deftype ObjMap [meta keys strobj update-count ^:mutable __hash]
   Object
@@ -3150,34 +3194,41 @@ reduces them without incurring seq initialization"
   ILookup
   (-lookup [coll k] (-lookup coll k nil))
   (-lookup [coll k not-found]
-    (obj-map-contains-key? k strobj (aget strobj k) not-found))
+    (if (and ^boolean (goog/isString k)
+             (coercive-not= (scan-array 1 k keys) nil))
+      (aget strobj k)
+      not-found))
 
   IAssociative
   (-assoc [coll k v]
-    (if (goog/isString k)
-      (let [overwrite? (.hasOwnProperty strobj k)]
-        (if overwrite?
-          (let [new-strobj (goog.object/clone strobj)]
-            (aset new-strobj k v)
-            (ObjMap. meta keys new-strobj (inc update-count) nil)) ; overwrite
-          (if (< update-count cljs.core.ObjMap/HASHMAP_THRESHOLD) #_(< (.-length keys) cljs.core.ObjMap/HASHMAP_THRESHOLD)
-            (let [new-strobj (goog.object/clone strobj) ; append
-                  new-keys (aclone keys)]
+    (if ^boolean (goog/isString k)
+        (if (coercive-not= (scan-array 1 k keys) nil)
+            (let [new-strobj (obj-clone strobj keys)]
               (aset new-strobj k v)
-              (.push new-keys k)
-              (ObjMap. meta new-keys new-strobj (inc update-count) nil))
-            ;; too many keys, switching to PersistentHashMap
-            (obj-map->hash-map coll k v))))
+              (ObjMap. meta keys new-strobj (inc update-count) nil)) ; overwrite
+            (if (or (< update-count cljs.core.ObjMap/HASHMAP_THRESHOLD)
+                    (< (alength keys) cljs.core.ObjMap/HASHMAP_THRESHOLD))
+                (let [new-strobj (obj-clone strobj keys) ; append
+                      new-keys (aclone keys)]
+                  (aset new-strobj k v)
+                  (.push new-keys k)
+                  (ObjMap. meta new-keys new-strobj (inc update-count) nil))
+                ;; too many keys, switching to PersistentHashMap
+                (obj-map->hash-map coll k v)))
       ; non-string key. game over.
       (obj-map->hash-map coll k v)))
   (-contains-key? [coll k]
-    (obj-map-contains-key? k strobj))
+    (if (and ^boolean (goog/isString k)
+             (coercive-not= (scan-array 1 k keys) nil))
+      true
+      false))
 
   IMap
   (-dissoc [coll k]
-    (if (and (goog/isString k) (.hasOwnProperty strobj k))
+    (if (and ^boolean (goog/isString k)
+             (coercive-not= (scan-array 1 k keys) nil))
       (let [new-keys (aclone keys)
-            new-strobj (goog.object/clone strobj)]
+            new-strobj (obj-clone strobj keys)]
         (.splice new-keys (scan-array 1 k new-keys) 1)
         (js-delete new-strobj k)
         (ObjMap. meta new-keys new-strobj (inc update-count) nil))
@@ -5863,6 +5914,12 @@ reduces them without incurring seq initialization"
 
   Range
   (-pr-seq [coll opts] (pr-sequential pr-seq "(" " " ")" opts coll)))
+
+
+;; IComparable
+(extend-protocol IComparable
+  PersistentVector
+  (-compare [x y] (compare-indexed x y)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Reference Types ;;;;;;;;;;;;;;;;
 

@@ -7,7 +7,7 @@
 ;   You must not remove this notice, or any other, from this software.
 
 (ns cljs.core
-  (:refer-clojure :exclude [-> ->> .. amap and areduce alength assert binding bound-fn case comment cond condp
+  (:refer-clojure :exclude [-> ->> .. amap and areduce alength aclone assert binding bound-fn case comment cond condp
                             declare definline definterface defmethod defmulti defn defn- defonce
                             defprotocol defrecord defstruct deftype delay doseq dosync dotimes doto
                             extend-protocol extend-type fn for future gen-class gen-interface
@@ -15,7 +15,7 @@
                             memfn ns or proxy proxy-super pvalues refer-clojure reify sync time
                             when when-first when-let when-not while with-bindings with-in-str
                             with-loading-context with-local-vars with-open with-out-str with-precision with-redefs
-                            satisfies? identical? true? false? nil? str
+                            satisfies? identical? true? false? nil? str get
 
                             aget aset
                             + - * / < <= > >= == zero? pos? neg? inc dec max min mod
@@ -249,6 +249,12 @@
        (let [h# (~hash-fn ~coll)]
          (set! ~hash-key h#)
          h#))))
+
+(defmacro get
+  ([coll k]
+     `(-lookup ~coll ~k nil))
+  ([coll k not-found]
+     `(-lookup ~coll ~k ~not-found)))
 
 ;;; internal -- reducers-related macros
 
@@ -690,7 +696,7 @@
                           (assoc-test m test expr)))
                       {} (partition 2 clauses))]
    `(cond
-     ~@(mapcat (fn [[m c]] `((identical? ~m ~e) ~c)) pairs)
+     ~@(mapcat (fn [[m c]] `((cljs.core/= ~m ~e) ~c)) pairs)
      :else ~default)))
 
 (defmacro try
@@ -852,6 +858,9 @@
 (defmacro alength [a]
   (list 'js* "~{}.length" a))
 
+(defmacro aclone [a]
+  (list 'js* "~{}.slice()" a))
+
 (defmacro amap
   "Maps an expression across an array a, using an index named idx, and
   return value named ret, initialized to a clone of a, then setting 
@@ -934,19 +943,16 @@
     (when (= (count options) 1)
       (throw "The syntax for defmulti has changed. Example: (defmulti name dispatch-fn :default dispatch-value)"))
     (let [options   (apply hash-map options)
-          default   (get options :default :default)
-          ;; hierarchy (get options :hierarchy #'cljs.core.global-hierarchy)
-	  ]
+          default   (core/get options :default :default)]
       (check-valid-options options :default :hierarchy)
       `(def ~(with-meta mm-name m)
-	 (let [method-table# (atom {})
-	       prefer-table# (atom {})
-	       method-cache# (atom {})
-	       cached-hierarchy# (atom {})
-	       hierarchy# (get ~options :hierarchy cljs.core/global-hierarchy)
-	       ]
-	   (cljs.core.MultiFn. ~(name mm-name) ~dispatch-fn ~default hierarchy#
-			       method-table# prefer-table# method-cache# cached-hierarchy#))))))
+         (let [method-table# (atom {})
+               prefer-table# (atom {})
+               method-cache# (atom {})
+               cached-hierarchy# (atom {})
+               hierarchy# (get ~options :hierarchy cljs.core/global-hierarchy)]
+           (cljs.core.MultiFn. ~(name mm-name) ~dispatch-fn ~default hierarchy#
+                               method-table# prefer-table# method-cache# cached-hierarchy#))))))
 
 (defmacro defmethod
   "Creates and installs a new method of multimethod associated with dispatch-value. "
