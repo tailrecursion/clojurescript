@@ -30,14 +30,14 @@
   (assert (= false (reader/read-string "false")))
   (assert (= "string" (reader/read-string "\"string\"")))
   (assert (= "escape chars \t \r \n \\ \" \b \f" (reader/read-string "\"escape chars \\t \\r \\n \\\\ \\\" \\b \\f\"")))
-  
+
   ;; queue literals
   (assert (= cljs.core.PersistentQueue/EMPTY
              (reader/read-string "#queue []")))
-  
+
   (assert (= (-> cljs.core.PersistentQueue/EMPTY (conj 1))
              (reader/read-string "#queue [1]")))
-  
+
   (assert (= (into cljs.core.PersistentQueue/EMPTY [1 2])
              (reader/read-string "#queue [1 2]")))
 
@@ -46,5 +46,53 @@
   (reader/register-tag-parser! "foo" identity)
 
   (assert (= [1 2] (reader/read-string "#foo [1 2]")))
-  
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;; Unicode Tests
+
+  ; sample unicode strings, symbols, keywords
+  (doseq [unicode
+          ["اختبار"     ; arabic
+           "ทดสอบ"      ; thai
+               "こんにちは"     ; japanese hiragana
+           "你好"        ; chinese traditional
+           "אַ גוט יאָר"  ; yiddish
+           "cześć"      ; polish
+           "привет"     ; russian
+
+           ;; RTL languages skipped below because tricky to insert
+           ;;  ' and : at the "start"
+
+           'ทดสอบ
+               'こんにちは
+           '你好
+           'cześć
+           'привет
+
+           :ทดสอบ
+               :こんにちは
+           :你好
+           :cześć
+           :привет
+
+         ;compound data
+         {:привет :ru "你好" :cn}
+         ]]
+    (let [input (pr-str unicode)
+          read  (reader/read-string input)]
+      (assert (= unicode read)
+              (str "Failed to read-string \"" unicode "\" from: " input))))
+
+  ; unicode error cases
+  (doseq [unicode-error
+          ["\"abc \\ua\""           ; truncated
+           "\"abc \\x0z  ...etc\""  ; incorrect code
+           "\"abc \\u0g00 ..etc\""  ; incorrect code
+           ]]
+    (let [r (try
+              (reader/read-string unicode-error)
+              :failed-to-throw
+              (catch js/Error e :ok))]
+      (assert (= r :ok) (str "Failed to throw reader error for: " unicode-error))))
+
   :ok)

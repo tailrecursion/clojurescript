@@ -39,6 +39,12 @@
        (recur (inc i) (conj! v i))))))
 (println)
 
+(println ";;; (def v (into [] (range 1000000)))")
+(println ";;; (reduce + v)")
+(def v (into [] (range 1000000)))
+(time (reduce + v))
+(println)
+
 (println ";;; map / record ops")
 (simple-benchmark [coll {:foo 1 :bar 2}] (get coll :foo) 1000000)
 (simple-benchmark [coll {:foo 1 :bar 2}] (-lookup coll :foo nil) 1000000)
@@ -55,6 +61,24 @@
 
 (println ";;; reader")
 (simple-benchmark [s "{:foo [1 2 3]}"] (reader/read-string s) 1000)
+(println)
+
+(println ";;; range")
+(simple-benchmark [r (range 1000000)] (last r) 1)
+(println)
+
+(defn ints-seq
+  ([n] (ints-seq 0 n))
+  ([i n]
+     (when (< i n)
+       (lazy-seq
+        (cons i (ints-seq (inc i) n))))))
+(def r (ints-seq 1000000))
+(println ";;; lazy-seq")
+(println ";;; first run")
+(simple-benchmark [r r] (last r) 1)
+(println ";;; second run")
+(simple-benchmark [r r] (last r) 1)
 (println)
 
 (println "\n")
