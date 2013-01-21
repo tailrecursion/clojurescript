@@ -1792,20 +1792,22 @@ reduces them without incurring seq initialization"
       (-lookup coll k not-found))))
 
 ;;hrm
-(extend-type js/String
-  IFn
-  (-invoke
-    ([this coll]
-       (get coll (.toString this)))
-    ([this coll not-found]
-       (get coll (.toString this) not-found))))
+(set! (.. js/String -prototype -call)
+  (fn []
+    (this-as s
+      (let [xs js/arguments]
+        (if (< (alength xs) 3)
+          (get (aget xs 1) (.toString s))
+          (get (aget xs 1) (.toString s) (aget xs 2)))))))
 
-(set! (.-apply (.-prototype js/String))
-      (fn
-        [s args]
-        (if (< (count args) 2)
-          (get (aget args 0) s)
-          (get (aget args 0) s (aget args 1)))))
+(set! (.. js/String -prototype -cljs$lang$applyTo )
+  (fn [args]
+    (this-as s
+      (if (< (count args) 2)
+        (get (nth args 0) (.toString s))
+        (get (nth args 0) (.toString s) (nth args 1))))))
+
+(set! (.. js/String -prototype -cljs$lang$maxFixedArity) 0)
 
 ; could use reify
 ;;; LazySeq ;;;
