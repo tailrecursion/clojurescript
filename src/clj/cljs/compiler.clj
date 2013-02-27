@@ -385,6 +385,25 @@
         (emitln "return " delegate-name "(" (string/join ", " params) ");")))
     (emits "})")))
 
+(defn emit-single-fn-method
+  [{:keys [name params expr env recurs]}]
+  (let [name (or name (gensym))
+        mname (munge name)
+        this-sym (gensym "this")]
+   (emit-wrap env
+     (emitln "(function(){" )
+     (emitln "var " mname " = function(" (comma-sep (map munge params)) "){")
+     (when recurs
+       (emitln "while(true){"))
+     (emits expr)
+     (when recurs
+       (emitln "break;")
+       (emitln "}"))
+     (emitln "};")
+     (emitln mname ".cljs$core$IFn$_invoke$arity$" (count params) " = " mname ";")
+     (emitln "return " mname ";")
+     (emitln "})()"))))
+
 (defn emit-fn-method
   [{:keys [type name variadic params expr env recurs max-fixed-arity]}]
   (emit-wrap env
@@ -451,9 +470,12 @@
         (when-not (= :return (:context env))
             (emits "return ")))
       (if (= 1 (count methods))
-        (if variadic
-          (emit-variadic-fn-method (assoc (first methods) :name name))
-          (emit-fn-method (assoc (first methods) :name name)))
+        (let [method (assoc (first methods) :name name)]
+         (if variadic
+           (emit-variadic-fn-method method)
+           (if-not (:type method)
+             (emit-single-fn-method method)
+             (emit-fn-method method))))
         (let [has-name? (and name true)
               name (or name (gensym))
               mname (munge name)
@@ -641,8 +663,11 @@
 
        proto?
        (let [pimpl (str (munge (protocol-prefix protocol))
-                        (munge (name (:name info))) "$arity$" (count args))]
-         (emits (first args) "." pimpl "(" (comma-sep args) ")"))
+                        (munge (name (:name info))) "$arity$" (dec (count args)))]
+         (if (= protocol 'cljs.core/IFn)
+           ;; special case to handle both deftypes extended to IFn & regular fns
+           (emits (first args) "." pimpl "(" (comma-sep (rest args)) ")")
+           (emits (first args) "." pimpl "(" (comma-sep args) ")")))
 
        keyword?
        (emits "(new cljs.core.Keyword(" f ")).call(" (comma-sep (cons "null" args)) ")")

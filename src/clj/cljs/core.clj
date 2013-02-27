@@ -575,9 +575,9 @@
                                                                         (cons (vec (cons (vary-meta targ assoc :tag t) args))
                                                                               body))]
                                                      (if (vector? (first meths))
-                                                       [`(set! ~(prototype-prefix (core/str pf "$arity$" (count (first meths)))) ~(with-meta `(fn ~@(adapt-params meths)) (meta form)))]
+                                                       [`(set! ~(prototype-prefix (core/str pf "$arity$" (core/dec (count (first meths))))) ~(with-meta `(fn ~@(adapt-params meths)) (meta form)))]
                                                        (map (fn [[sig & body :as meth]]
-                                                              `(set! ~(prototype-prefix (core/str pf "$arity$" (count sig)))
+                                                              `(set! ~(prototype-prefix (core/str pf "$arity$" (core/dec (count sig))))
                                                                      ~(with-meta `(fn ~(adapt-params meth)) (meta form))))
                                                             meths)))))
                                                sigs)))))]
@@ -784,7 +784,7 @@
                        fname (vary-meta fname assoc :protocol p)]
                    `(defn ~fname ~@(map (fn [sig]
                                           (expand-sig fname
-                                                      (symbol (core/str slot "$arity$" (count sig)))
+                                                      (symbol (core/str slot "$arity$" (core/dec (count sig))))
                                                       sig))
                                         sigs))))]
     `(do
