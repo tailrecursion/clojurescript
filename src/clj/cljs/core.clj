@@ -770,7 +770,7 @@
         expand-sig (fn [fname slot sig]
                      `(~sig
                        (if (and ~(first sig) (. ~(first sig) ~(symbol (core/str "-" slot)))) ;; Property access needed here.
-                         (. ~(first sig) ~slot ~@sig)
+                         (. ~(first sig) ~slot ~@(if (= p 'cljs.core/IFn) (rest sig) sig))
                          (let [x# (if (nil? ~(first sig)) nil ~(first sig))]
                            ((or
                              (aget ~(fqn fname) (goog.typeOf x#))
