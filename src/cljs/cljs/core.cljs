@@ -3724,7 +3724,8 @@ reduces them without incurring seq initialization"
         so  (.-strobj m)
         mm  (meta m)]
     (loop [i   0
-           out (transient cljs.core.PersistentHashMap/EMPTY)]
+           out (cljs.core.PersistentHashMap/asTransient
+                 cljs.core.PersistentHashMap/EMPTY)]
       (if (< i len)
         (let [k (aget ks i)]
           (recur (inc i) (assoc! out k (aget so k))))
@@ -3842,7 +3843,7 @@ reduces them without incurring seq initialization"
 
 (set! cljs.core.ObjMap/asTransient
   (fn [coll]
-    (transient (into (hash-map) coll))))
+    (cljs.core.PersistentHashMap/asTransient (into (hash-map) coll))))
 
 (set! cljs.core.ObjMap/EMPTY (ObjMap. nil (array) (js-obj) 0 0))
 
@@ -4111,7 +4112,7 @@ reduces them without incurring seq initialization"
 (declare TransientHashMap)
 
 (defn- array->transient-hash-map [len arr]
-  (loop [out (transient {})
+  (loop [out (cljs.core.ObjMap/asTransient {})
          i   0]
     (if (< i len)
       (recur (assoc! out (aget arr i) (aget arr (inc i))) (+ i 2))
@@ -4835,7 +4836,8 @@ reduces them without incurring seq initialization"
 (set! cljs.core.PersistentHashMap/fromArrays
       (fn [ks vs]
         (let [len (alength ks)]
-          (loop [i 0 out (transient cljs.core.PersistentHashMap/EMPTY)]
+          (loop [i 0 out (cljs.core.PersistentHashMap/asTransient
+                           cljs.core.PersistentHashMap/EMPTY)]
             (if (< i len)
               (recur (inc i) (assoc! out (aget ks i) (aget vs i)))
               (persistent! out))))))
@@ -5592,7 +5594,9 @@ reduces them without incurring seq initialization"
   "keyval => key val
   Returns a new hash map with supplied mappings."
   [& keyvals]
-  (loop [in (seq keyvals), out (transient cljs.core.PersistentHashMap/EMPTY)]
+  (loop [in (seq keyvals)
+         out (cljs.core.PersistentHashMap/asTransient
+               cljs.core.PersistentHashMap/EMPTY)]
     (if in
       (recur (nnext in) (assoc! out (first in) (second in)))
       (persistent! out))))
@@ -5752,7 +5756,8 @@ reduces them without incurring seq initialization"
 
 (set! cljs.core.PersistentHashSet/asTransient
   (fn [coll]
-    (TransientHashSet. (transient (.-hash-map coll)))))
+    (TransientHashSet.
+      (cljs.core.PersistentHashMap/asTransient (.-hash-map coll)))))
 
 (set! cljs.core.PersistentHashSet/EMPTY
   (PersistentHashSet. nil cljs.core.PersistentArrayMap/EMPTY 0))
@@ -5765,7 +5770,8 @@ reduces them without incurring seq initialization"
          (PersistentHashSet. nil
            (cljs.core.PersistentArrayMap/fromArray arr true) nil))
        (loop [i 0
-              out (transient cljs.core.PersistentHashSet/EMPTY)]
+              out (cljs.core.PersistentHashSet/asTransient
+                    cljs.core.PersistentHashSet/EMPTY)]
          (if (< i len)
            (recur (+ i 2) (conj! out (aget items i)))
            (persistent! out)))))))
