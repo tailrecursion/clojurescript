@@ -3843,7 +3843,10 @@ reduces them without incurring seq initialization"
 
 (set! cljs.core.ObjMap/asTransient
   (fn [coll]
-    (cljs.core.PersistentHashMap/asTransient (into (hash-map) coll))))
+    (loop [kvs (seq coll) ret (hash-map)]
+      (if-not (nil? kvs)
+        (recur (next kvs) (conj ret (first kvs)))
+        (cljs.core.PersistentHashMap/asTransient ret)))))
 
 (set! cljs.core.ObjMap/EMPTY (ObjMap. nil (array) (js-obj) 0 0))
 
@@ -3974,9 +3977,13 @@ reduces them without incurring seq initialization"
         (if (< cnt cljs.core.PersistentArrayMap/HASHMAP_THRESHOLD)
           (let [arr (array-map-extend-kv coll k v)]
             (PersistentArrayMap. meta (inc cnt) arr nil))
-          (-> (into cljs.core.PersistentHashMap/EMPTY coll)
-            (-assoc k v)
-            (-with-meta meta)))
+          (let [coll (loop [kvs (seq coll)
+                            ret (cljs.core.PersistentHashMap/asTransient
+                                  cljs.core.PersistentHashMap/EMPTY)]
+                       (if-not (nil? kvs)
+                         (recur (next kvs) (conj! ret (first kvs)))
+                         (persistent! ret)))]
+            (-> coll (-assoc k v) (-with-meta meta))))
 
         (identical? v (aget arr (inc idx)))
         coll
@@ -6851,24 +6858,6 @@ Maps become Objects. Arbitrary keys are encoded to by key->js."
 
 (defprotocol IEncodeClojure
   (-js->clj [x] [x options] "Transforms JavaScript values to Clojure"))
-
-(extend-protocol IEncodeClojure
-  default
-  (-js->clj
-    ([x options]
-       (let [{:keys [keywordize-keys]} options
-             keyfn (if keywordize-keys keyword str)
-             f (fn thisfn [x]
-                 (cond
-                   (seq? x) (doall (map thisfn x))
-                   (coll? x) (into (empty x) (map thisfn x))
-                   (goog.isArray x) (vec (map thisfn x))
-                   (identical? (type x) js/Object) (into {} (for [k (js-keys x)]
-                                                              [(keyfn k)
-                                                               (thisfn (aget x k))]))
-                   :else x))]
-         (f x)))
-    ([x] (-js->clj x {:keywordize-keys false}))))
 
 (defn js->clj
   "Recursively transforms JavaScript arrays into ClojureScript
