@@ -2307,8 +2307,7 @@ reduces them without incurring seq initialization"
 
 ;;; Transients
 
-(defn transient [coll]
-  (-as-transient coll))
+(declare transient)
 
 (defn persistent! [tcoll]
   (-persistent! tcoll))
@@ -3192,15 +3191,21 @@ reduces them without incurring seq initialization"
   (-invoke [coll k not-found]
     (-lookup coll k not-found))
 
-  IEditableCollection
-  (-as-transient [coll]
-    (TransientVector. cnt shift (tv-editable-root root) (tv-editable-tail tail)))
-
   IReversible
   (-rseq [coll]
     (if (pos? cnt)
       (RSeq. coll (dec cnt) nil)
       ())))
+
+(set! cljs.core.PersistentVector/asTransient
+  (fn [v]
+    (TransientVector.
+      (.-cnt v) (.-shift v)
+      (VectorNode. (js-obj) (aclone (.-arr (.-root v))))
+      (let [tl  (.-tail v)
+            ret (make-array 32)]
+        (array-copy tl 0 ret 0 (alength tl))
+        ret))))
 
 (set! cljs.core.PersistentVector/EMPTY_NODE (VectorNode. nil (make-array 32)))
 
@@ -3215,7 +3220,7 @@ reduces them without incurring seq initialization"
         (PersistentVector. nil l 5 cljs.core.PersistentVector/EMPTY_NODE xs nil)
         (let [node (.slice xs 0 32)
               v (PersistentVector. nil 32 5 cljs.core.PersistentVector/EMPTY_NODE node nil)]
-          (loop [i 32 out (-as-transient v)]
+          (loop [i 32 out (cljs.core.PersistentVector/asTransient v)]
             (if (< i l)
               (recur (inc i) (conj! out (aget xs i)))
               (persistent! out))))))))
@@ -3223,8 +3228,8 @@ reduces them without incurring seq initialization"
 (defn vec [coll]
   (-persistent!
    (reduce -conj!
-           (-as-transient cljs.core.PersistentVector/EMPTY)
-           coll)))
+     (cljs.core.PersistentVector/asTransient cljs.core.PersistentVector/EMPTY)
+     coll)))
 
 (defn vector [& args] (vec args))
 
@@ -3833,10 +3838,10 @@ reduces them without incurring seq initialization"
   (-invoke [coll k]
     (-lookup coll k))
   (-invoke [coll k not-found]
-    (-lookup coll k not-found))
+    (-lookup coll k not-found)))
 
-  IEditableCollection
-  (-as-transient [coll]
+(set! cljs.core.ObjMap/asTransient
+  (fn [coll]
     (transient (into (hash-map) coll))))
 
 (set! cljs.core.ObjMap/EMPTY (ObjMap. nil (array) (js-obj) 0 0))
@@ -4017,11 +4022,11 @@ reduces them without incurring seq initialization"
     (-lookup coll k))
 
   (-invoke [coll k not-found]
-    (-lookup coll k not-found))
+    (-lookup coll k not-found)))
 
-  IEditableCollection
-  (-as-transient [coll]
-    (TransientArrayMap. (js-obj) (alength arr) (aclone arr))))
+(set! cljs.core.PersistentArrayMap/asTransient
+  (fn [coll]
+    (TransientArrayMap. (js-obj) (alength (.-arr coll)) (aclone (.-arr coll)))))
 
 (set! cljs.core.PersistentArrayMap/EMPTY (PersistentArrayMap. nil 0 (array) nil))
 
@@ -4817,11 +4822,13 @@ reduces them without incurring seq initialization"
     (-lookup coll k))
 
   (-invoke [coll k not-found]
-    (-lookup coll k not-found))
+    (-lookup coll k not-found)))
 
-  IEditableCollection
-  (-as-transient [coll]
-    (TransientHashMap. (js-obj) root cnt has-nil? nil-val)))
+(set! cljs.core.PersistentHashMap/asTransient
+  (fn [coll]
+    (TransientHashMap.
+      (js-obj) (.-root coll) (.-cnt coll)
+      (.-has-nil? coll) (.-nil-val coll))))
 
 (set! cljs.core.PersistentHashMap/EMPTY (PersistentHashMap. nil 0 nil false nil 0))
 
@@ -5741,10 +5748,11 @@ reduces them without incurring seq initialization"
   (-invoke [coll k]
     (-lookup coll k))
   (-invoke [coll k not-found]
-    (-lookup coll k not-found))
+    (-lookup coll k not-found)))
 
-  IEditableCollection
-  (-as-transient [coll] (TransientHashSet. (-as-transient hash-map))))
+(set! cljs.core.PersistentHashSet/asTransient
+  (fn [coll]
+    (TransientHashSet. (transient (.-hash-map coll)))))
 
 (set! cljs.core.PersistentHashSet/EMPTY
   (PersistentHashSet. nil cljs.core.PersistentArrayMap/EMPTY 0))
@@ -5888,10 +5896,20 @@ reduces them without incurring seq initialization"
                (recur (inc ki)))
              (cljs.core.PersistentHashSet/fromArray arr true))))
        (loop [in keys
-              ^not-native out (-as-transient cljs.core.PersistentHashSet/EMPTY)]
+              ^not-native out (cljs.core.PersistentHashSet/asTransient
+                                cljs.core.PersistentHashSet/EMPTY)]
          (if-not (nil? in)
            (recur (-next in) (-conj! out (-first in)))
            (-persistent! out))))))
+
+(defn transient [coll]
+  (cond
+    (instance? PersistentVector coll) (cljs.core.PersistentVector/asTransient coll)
+    (instance? ObjMap coll) (cljs.core.ObjMap/asTransient coll)
+    (instance? PersistentArrayMap coll) (cljs.core.PersistentArrayMap/asTransient coll)
+    (instance? PersistentHashMap coll) (cljs.core.PersistentHashMap/asTransient coll)
+    (instance? PersistentHashSet coll) (cljs.core.PersistentHashSet/asTransient coll)
+    :else (-as-transient coll)))
 
 (defn set
   "Returns a set of the distinct elements of coll."
