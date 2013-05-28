@@ -186,9 +186,9 @@
 
 (defmacro str [& xs]
   (let [strs (->> (repeat (count xs) "cljs.core.str(~{})")
-                  (interpose ",")
+                  (interpose "+")
                   (apply core/str))]
-   (concat (list 'js* (core/str "[" strs "].join('')")) xs)))
+    (list* 'js* (core/str "(" strs ")") xs)))
 
 (defn bool-expr [e]
   (vary-meta e assoc :tag 'boolean))
